@@ -351,6 +351,10 @@ abstract class RDD[T: ClassTag](
    * coalesce(1000, shuffle = true) will result in 1000 partitions with the
    * data distributed using a hash partitioner.
    */
+  // 注意当发生剧烈的合并时(比如partition从1000个减到1个)，为了保障计算不在一个节点上执行
+  // 开启shuffle = true是一个选择 (repartition的实现就是调用coalesce && shuffle=true)
+  // coalesce 的shuffle = false时是不能让partition数量增加的
+  //
   def coalesce(numPartitions: Int, shuffle: Boolean = false)(implicit ord: Ordering[T] = null)
       : RDD[T] = {
     if (shuffle) {

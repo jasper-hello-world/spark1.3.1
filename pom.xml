@@ -1443,7 +1443,8 @@
         <version>0.4.0</version>
         <configuration>
           <verbose>false</verbose>
-          <failOnViolation>true</failOnViolation>
+          <!--检测是否符合scala规范-->
+          <failOnViolation>false</failOnViolation>
           <includeTestSourceDirectory>false</includeTestSourceDirectory>
           <failOnWarning>false</failOnWarning>
           <sourceDirectory>${basedir}/src/main/scala</sourceDirectory>
