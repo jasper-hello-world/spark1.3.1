@@ -41,8 +41,7 @@ abstract class Dependency[T] extends Serializable {
 abstract class NarrowDependency[T](_rdd: RDD[T]) extends Dependency[T] {
   /**
    * Get the parent partitions for a child partition.
-    * 负责给出某个 partition 按照该 dependency 所依赖的 parent RDD 中的
-      partitions: List[Int]。
+    * 负责给出某个 partition 按照该 dependency 所依赖的 parent RDD 中的partitions: List[Int]。
    * @param partitionId a partition of the child RDD
    * @return the partitions of the parent RDD that the child partition depends upon
    */

@@ -54,7 +54,7 @@ private[spark] class SampledRDD[T: ClassTag](
       // replacement is Poisson(frac). We use that to get a count for each element.
       val poisson = new PoissonDistribution(frac)
       poisson.reseedRandomGenerator(split.seed)
-
+      // RDD 中的 compute() 调用 parentRDD.iter() 来将 parent RDDs 中的 records 一个个 fetch 过来。
       firstParent[T].iterator(split.prev, context).flatMap { element =>
         val count = poisson.sample()
         if (count == 0) {

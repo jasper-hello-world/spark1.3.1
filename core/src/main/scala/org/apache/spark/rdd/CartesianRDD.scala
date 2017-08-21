@@ -54,7 +54,8 @@ class CartesianRDD[T: ClassTag, U: ClassTag](
   with Serializable {
 
   val numPartitionsInRdd2 = rdd2.partitions.size
-
+  // RDD x = (RDD a).cartesian(RDD b)
+  // 定义 RDD x 应该包含多少个 partition，每个 partition 是什么类型
   override def getPartitions: Array[Partition] = {
     // create the cross product split
     val array = new Array[Partition](rdd1.partitions.size * rdd2.partitions.size)
@@ -69,13 +70,19 @@ class CartesianRDD[T: ClassTag, U: ClassTag](
     val currSplit = split.asInstanceOf[CartesianPartition]
     (rdd1.preferredLocations(currSplit.s1) ++ rdd2.preferredLocations(currSplit.s2)).distinct
   }
-
+  // 定义 RDD x 中的每个 partition 怎么计算得到
   override def compute(split: Partition, context: TaskContext) = {
     val currSplit = split.asInstanceOf[CartesianPartition]
     for (x <- rdd1.iterator(currSplit.s1, context);
          y <- rdd2.iterator(currSplit.s2, context)) yield (x, y)
   }
-
+  // 定义 RDD x 中的 partition i 依赖于哪些 RDD 中的哪些 partitions
+  //
+  // 这里 RDD x 依赖于 RDD a，同时依赖于 RDD b，都是 NarrowDependency
+  // 对于第一个依赖，RDD x 中的 partition i 依赖于 RDD a 中的
+  // 第 List(i / numPartitionsInRdd1) 个 partition
+  // 对于第二个依赖，RDD x 中的 partition i 依赖于 RDD b 中的
+  // 第 List(i % numPartitionsInRdd2) 个 partition
   override def getDependencies: Seq[Dependency[_]] = List(
     new NarrowDependency(rdd1) {
       def getParents(id: Int): Seq[Int] = List(id / numPartitionsInRdd2)

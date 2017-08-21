@@ -469,8 +469,8 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
   }
 
   /**
-    * Return a copy of the RDD partitioned using the specified partitioner.
-    */
+  * Return a copy of the RDD partitioned using the specified partitioner.
+  */
   def partitionBy(partitioner: Partitioner): RDD[(K, V)] = {
     if (keyClass.isArray && partitioner.isInstanceOf[HashPartitioner]) {
       throw new SparkException("Default partitioner cannot partition array keys.")
@@ -487,10 +487,10 @@ class PairRDDFunctions[K, V](self: RDD[(K, V)])
     * pair of elements will be returned as a (k, (v1, v2)) tuple, where (k, v1) is in `this` and
     * (k, v2) is in `other`. Uses the given Partitioner to partition the output RDD.
     */
-  // join() 将两个 RDD[(K, V)] 按照 SQL 中的 join 方式聚合在一起。与 intersection() 类似，首先进行 cogroup()，得到 <K,
-  // (Iterable[V1], Iterable[V2])> 类型的 MappedValuesRDD，然后对 Iterable[V1] 和 Iterable[V2] 做笛卡尔集，并将集合 flat()
-  // 化。
-  // 要想join不走shuffle就要让cogroup不走shuffle（RDDa和RDDb的partitioner及CoGroupedRDD的partitioner要相同 ）
+  // join() 将两个 RDD[(K, V)] 按照 SQL 中的 join 方式聚合在一起。与 intersection() 类似，首先进行 cogroup()，
+  // 得到 <K,(Iterable[V1], Iterable[V2])> 类型的 MappedValuesRDD，然后对 Iterable[V1] 和 Iterable[V2] 做笛卡尔集，
+  // 并将集合 flat() 化。要想join不走shuffle就要让cogroup不走shuffle（RDDa和RDDb的partitioner
+  // 及CoGroupedRDD的partitioner要相同 ）
   def join[W](other: RDD[(K, W)], partitioner: Partitioner): RDD[(K, (V, W))] = {
     this.cogroup(other, partitioner).flatMapValues(pair =>
       for (v <- pair._1.iterator; w <- pair._2.iterator) yield (v, w)

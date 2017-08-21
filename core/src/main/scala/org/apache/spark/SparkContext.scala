@@ -1563,7 +1563,7 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
   @Experimental
   def submitJob[T, U, R](
       rdd: RDD[T],
-      processPartition: Iterator[T] => U,
+      processPartition: Iterator[T] => U, // 定义如何计算 partition 中的 records 得到 result
       partitions: Seq[Int],
       resultHandler: (Int, U) => Unit,
       resultFunc: => R): SimpleFutureAction[R] =

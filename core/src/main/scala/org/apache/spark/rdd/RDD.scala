@@ -106,6 +106,8 @@ abstract class RDD[T: ClassTag](
    * :: DeveloperApi ::
    * Implemented by subclasses to compute a given partition.
    */
+  // compute() 方法负责接收 parent RDDs
+  // 或者 data block 流入的 records，进行计算，然后输出 record。
   @DeveloperApi
   def compute(split: Partition, context: TaskContext): Iterator[T]
 
@@ -797,8 +799,10 @@ abstract class RDD[T: ClassTag](
   /**
    * Applies a function f to all elements of this RDD.
    */
+  // foreach() 会调用 sc.runJob(this, (iter: Iterator[T]) =>iter.foreach(f)) ，向 DAGScheduler 提交 job。
+  // 每个Action中最终都会去调用DAGScheduler.runJob()方法来生成job
   def foreach(f: T => Unit) {
-    val cleanF = sc.clean(f)
+    val cleanF = sc.clean(f) // 闭包处理 (清理外部变量，检查序列化)
     sc.runJob(this, (iter: Iterator[T]) => iter.foreach(cleanF))
   }
 
@@ -1375,6 +1379,9 @@ abstract class RDD[T: ClassTag](
   private[spark] var checkpointData: Option[RDDCheckpointData[T]] = None
 
   /** Returns the first parent RDD */
+  //  firstParent 表示该 RDD 依赖的第一个 parent RDD，iterator() 表
+  //  示 parentRDD 中的 records 是一个一个流入该 RDD 的，map(f) 表示每流入一个 recod 就对其进行 f(record) 操作，输
+  //  出 record。
   protected[spark] def firstParent[U: ClassTag] = {
     dependencies.head.rdd.asInstanceOf[RDD[U]]
   }

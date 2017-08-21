@@ -471,13 +471,16 @@ class DAGScheduler(
    * Submit a job to the job scheduler and get a JobWaiter object back. The JobWaiter object
    * can be used to block until the the job finishes executing or can be used to cancel the job.
    */
+//  首先得到一个 jobId，然后再次包装 func，向 DAGSchedulerEventProcessActor 发送 JobSubmitted 信息，
+//  该 actor 收到信息后进一步调用 dagScheduler.handleJobSubmitted() 来处理提交的 job。之所以这么麻烦，是为了符合事
+//  件驱动模型。
   def submitJob[T, U](
       rdd: RDD[T],
       func: (TaskContext, Iterator[T]) => U,
       partitions: Seq[Int],
       callSite: CallSite,
       allowLocal: Boolean,
-      resultHandler: (Int, U) => Unit,
+      resultHandler: (Int, U) => Unit, // 定义如何对从各个 partition 收集来的 results 进行计算来得到最终结果
       properties: Properties): JobWaiter[U] = {
     // Check to make sure we are not launching a task on a partition that does not exist.
     val maxPartitions = rdd.partitions.length
@@ -486,15 +489,17 @@ class DAGScheduler(
         "Attempting to access a non-existent partition: " + p + ". " +
           "Total number of partitions: " + maxPartitions)
     }
-
+    // 得到 jobId
     val jobId = nextJobId.getAndIncrement()
     if (partitions.size == 0) {
       return new JobWaiter[U](this, jobId, 0, resultHandler)
     }
 
     assert(partitions.size > 0)
+    // 然后再次包装 func
     val func2 = func.asInstanceOf[(TaskContext, Iterator[_]) => _]
     val waiter = new JobWaiter(this, jobId, partitions.size, resultHandler)
+    // 向 DAGSchedulerEventProcessActor （DAGSchedulerEventProcessLoop）发送 JobSubmitted 信息
     eventProcessLoop.post(JobSubmitted(
       jobId, rdd, func2, partitions.toArray, allowLocal, callSite, waiter, properties))
     waiter
@@ -715,7 +720,10 @@ class DAGScheduler(
     listenerBus.post(SparkListenerTaskGettingResult(taskInfo))
     submitWaitingStages()
   }
-
+//  处理从submit()提交来的job
+//  handleJobSubmmitted() 首先调用 finalStage = newStage() 来划分 stage，然后submitStage(finalStage)。由于
+//  finalStage 可能有 parent stages，实际先提交 parent stages，等到他们执行完，finalStage 需要再次提交执行。再次提
+//  交由 handleJobSubmmitted() 最后的 submitWaitingStages() 负责。
   private[scheduler] def handleJobSubmitted(jobId: Int,
       finalRDD: RDD[_],
       func: (TaskContext, Iterator[_]) => _,
@@ -728,6 +736,7 @@ class DAGScheduler(
     try {
       // New stage creation may throw an exception if, for example, jobs are run on a
       // HadoopRDD whose underlying HDFS files have been deleted.
+      // 调用 finalStage = newStage() 来划分 stage
       finalStage = newStage(finalRDD, partitions.size, None, jobId, callSite)
     } catch {
       case e: Exception =>
