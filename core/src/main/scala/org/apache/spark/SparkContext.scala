@@ -1448,6 +1448,7 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
    * flag specifies whether the scheduler can run the computation on the driver rather than
    * shipping it out to the cluster, for short actions like first().
    */
+  // resultHandler() ，定义如何对从各个 partition 收集来的 results 进行计算来得到最终结果。
   def runJob[T, U: ClassTag](
       rdd: RDD[T],
       func: (TaskContext, Iterator[T]) => U,
@@ -1460,6 +1461,7 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
     val callSite = getCallSite
     val cleanedFunc = clean(func)
     logInfo("Starting job: " + callSite.shortForm)
+    // 默认不打印出RDD的Lineage
     if (conf.getBoolean("spark.logLineage", false)) {
       logInfo("RDD's recursive dependencies:\n" + rdd.toDebugString)
     }
@@ -1480,6 +1482,7 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
       partitions: Seq[Int],
       allowLocal: Boolean
       ): Array[U] = {
+    // 根据 partition 个数 new 出来将来要持有 result 的数组
     val results = new Array[U](partitions.size)
     runJob[T, U](rdd, func, partitions, allowLocal, (index, res) => results(index) = res)
     results
@@ -1526,6 +1529,8 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
   /**
    * Run a job on all partitions in an RDD and pass the results to a handler function.
    */
+  // processPartition() ，定义如何计算 partition 中的 records 得到 result
+  // resultHandler() ，定义如何对从各个 partition 收集来的 results 进行计算来得到最终结果
   def runJob[T, U: ClassTag](
       rdd: RDD[T],
       processPartition: Iterator[T] => U,

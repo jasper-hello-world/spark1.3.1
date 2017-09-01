@@ -237,6 +237,7 @@ class DAGScheduler(
    * jobId. Production of shuffle map stages should always use newOrUsedStage, not newStage
    * directly.
    */
+  // 产生shuffle map stages应该总是使用 newOrUsedStage 而不是 直接使用newStage
   private def newStage(
       rdd: RDD[_],
       numTasks: Int,
@@ -496,10 +497,11 @@ class DAGScheduler(
     }
 
     assert(partitions.size > 0)
-    // 然后再次包装 func
+    // 然后再次包装 func (居然没判断func 的类型)
     val func2 = func.asInstanceOf[(TaskContext, Iterator[_]) => _]
+    // waiter对象 等待dagScheduler job的完成，然后等任务完成后它会把结果集发送给 resultHandler处理
     val waiter = new JobWaiter(this, jobId, partitions.size, resultHandler)
-    // 向 DAGSchedulerEventProcessActor （DAGSchedulerEventProcessLoop）发送 JobSubmitted 信息
+    // 向 DAGSchedulerEventProcessActor （DAGSchedulerEventProcessLoop）发送 JobSubmitted 信息 内部的线程会随后处理
     eventProcessLoop.post(JobSubmitted(
       jobId, rdd, func2, partitions.toArray, allowLocal, callSite, waiter, properties))
     waiter
@@ -720,10 +722,9 @@ class DAGScheduler(
     listenerBus.post(SparkListenerTaskGettingResult(taskInfo))
     submitWaitingStages()
   }
-//  处理从submit()提交来的job
 //  handleJobSubmmitted() 首先调用 finalStage = newStage() 来划分 stage，然后submitStage(finalStage)。由于
 //  finalStage 可能有 parent stages，实际先提交 parent stages，等到他们执行完，finalStage 需要再次提交执行。再次提
-//  交由 handleJobSubmmitted() 最后的 submitWaitingStages() 负责。
+//  交由handleJobSubmmitted()最后的 submitWaitingStages() 负责。
   private[scheduler] def handleJobSubmitted(jobId: Int,
       finalRDD: RDD[_],
       func: (TaskContext, Iterator[_]) => _,
@@ -1367,7 +1368,10 @@ private[scheduler] class DAGSchedulerEventProcessLoop(dagScheduler: DAGScheduler
    * The main event loop of the DAG scheduler.
    */
   override def onReceive(event: DAGSchedulerEvent): Unit = event match {
+    // action 触发job后通过调用submitJob()方法中的DAGSchedulerEventProcessLoop发送一个JobSubmitted消息
+    // 最终在这里匹配收取JobSubmitted消息
     case JobSubmitted(jobId, rdd, func, partitions, allowLocal, callSite, listener, properties) =>
+      // 处理从submit()提交来的job
       dagScheduler.handleJobSubmitted(jobId, rdd, func, partitions, allowLocal, callSite,
         listener, properties)
 

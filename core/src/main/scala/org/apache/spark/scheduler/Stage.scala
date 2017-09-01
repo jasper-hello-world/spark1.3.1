@@ -47,6 +47,14 @@ import org.apache.spark.util.CallSite
  * be updated for each attempt.
  *
  */
+// 一个阶段是一组独立的任务，他们都在计算同一个函数，需要运行作为Spark作业的一部分，其中所有的任务都具有相同的随机依赖关系。
+// 调度程序运行的每一个DAG都被分成不同的阶段，在发生shuffle的地方，然后DAGScheduler以拓扑顺序运行这些阶段。
+
+// 每个阶段可以是一个shuffle map stage，在这种情况下，其任务的结果将作为另一个stage或result stage的输入，在这种情况下，
+// 它的任务直接计算触发job的action操作（例如count（），save（） ，等等）。对于shuffle map stages，还会跟踪每个输出partition所在的节点。
+// 每个舞台还有一个jobId，用于识别首先提交舞台的作业。当使用FIFO调度时，这允许首先计算来自较早作业的阶段，
+// 或者在故障时恢复更快的恢复。 callSite提供与舞台相关的用户代码中的位置。对于洗牌地图阶段，callSite给出创建RDD正在被洗牌的用户代码。
+// 对于结果阶段，callSite给出执行相关操作的用户代码（例如count（））。单个阶段可以由多次尝试组成。在这种情况下，将为每次尝试更新latestInfo字段。
 private[spark] class Stage(
     val id: Int,
     val rdd: RDD[_],

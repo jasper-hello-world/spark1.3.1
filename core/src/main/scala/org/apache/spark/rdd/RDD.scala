@@ -801,6 +801,7 @@ abstract class RDD[T: ClassTag](
    */
   // foreach() 会调用 sc.runJob(this, (iter: Iterator[T]) =>iter.foreach(f)) ，向 DAGScheduler 提交 job。
   // 每个Action中最终都会去调用DAGScheduler.runJob()方法来生成job
+  // f 为定义如何计算partition中的records得到result
   def foreach(f: T => Unit) {
     val cleanF = sc.clean(f) // 闭包处理 (清理外部变量，检查序列化)
     sc.runJob(this, (iter: Iterator[T]) => iter.foreach(cleanF))
