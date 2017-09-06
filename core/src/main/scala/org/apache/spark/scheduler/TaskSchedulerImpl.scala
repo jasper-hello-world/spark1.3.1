@@ -51,6 +51,14 @@ import org.apache.spark.storage.BlockManagerId
  * acquire a lock on us, so we need to make sure that we don't try to lock the backend while
  * we are holding a lock on ourselves.
  */
+// 通过执行SchedulerBackend来调度多种类型的集群的任务。 它也可以通过使用LocalBackend并将isLocal设置为true来使用本地设置。
+// 它能处理常见的逻辑，例如确定作业之间的调度顺序，唤醒启动推测任务等。
+
+// 客户端应首先调用initialize（）和start（），然后通过runTasks方法提交任务集。
+
+// 线程：SchedulerBackends和task-submitting客户端可以从多个线程调用此类，
+// 因此需要在公共API方法中使用锁以维护其状态。 另外，一些SchedulerBackends当他们想在这里发送事件时自己进行同步，
+// 然后在我们上面获取一个锁，所以我们需要确保我们在我们自己锁定时不要锁定backend。
 private[spark] class TaskSchedulerImpl(
     val sc: SparkContext,
     val maxTaskFailures: Int,
@@ -153,13 +161,17 @@ private[spark] class TaskSchedulerImpl(
   override def postStartHook() {
     waitBackendReady()
   }
-
+  // 在submitMissingTasks()中最后会调用的taskScheduler.submitTasks(taskSet) 来提交一整个taskSet。
+  // 这个taskScheduler(为trait) 的类型是TaskSchedulerImpl
   override def submitTasks(taskSet: TaskSet) {
     val tasks = taskSet.tasks
     logInfo("Adding task set " + taskSet.id + " with " + tasks.length + " tasks")
     this.synchronized {
+      // 每一个 taskSet 被包装成 manager: TaskSetMananger，
+      // 然后交给 schedulableBuilder.addTaskSetManager(manager,properties)
       val manager = createTaskSetManager(taskSet, maxTaskFailures)
       activeTaskSets(taskSet.id) = manager
+      // schedulableBuilder 可以是FIFOSchedulableBuilder 或者 FairSchedulableBuilder 调度器。
       schedulableBuilder.addTaskSetManager(manager, manager.taskSet.properties)
 
       if (!isLocal && !hasReceivedTask) {
@@ -177,6 +189,10 @@ private[spark] class TaskSchedulerImpl(
       }
       hasReceivedTask = true
     }
+    // 通知backend.reviveOffers() 去执行 task，backend 的类型是 SchedulerBackend。如果在集群上运行，那么这个 backend
+    // 类型是 SparkDeploySchedulerBackend。
+    // SparkDeploySchedulerBackend 是 CoarseGrainedSchedulerBackend 的子类， backend.reviveOffers() 其实是向
+    // DriverActor 发送 ReviveOffers 信息。SparkDeploySchedulerBackend 在 start() 的时候，会启动 DriverActor。
     backend.reviveOffers()
   }
 

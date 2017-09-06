@@ -28,6 +28,7 @@ import org.apache.spark.util.Utils
  * Result returned by a ShuffleMapTask to a scheduler. Includes the block manager address that the
  * task ran on as well as the sizes of outputs for each reducer, for passing on to the reduce tasks.
  */
+// ShuffleMapTask返回给调度程序的结果。 包括任务运行的block manager地址以及每个reducer的输出大小，用以传递给reduce任务。
 private[spark] sealed trait MapStatus {
   /** Location where this task was run. */
   def location: BlockManagerId
@@ -38,6 +39,8 @@ private[spark] sealed trait MapStatus {
    * If a block is non-empty, then this method MUST return a non-zero size.  This invariant is
    * necessary for correctness, since block fetchers are allowed to skip zero-size blocks.
    */
+  // 预估reduce block的大小，以字节为单位
+  // 如果block不为空，则该方法务必返回非零大小。 这种不变性对于正确性是必要的，因为block fetchers被允许跳过零大小的块。
   def getSizeForBlock(reduceId: Int): Long
 }
 

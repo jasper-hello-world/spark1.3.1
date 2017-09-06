@@ -70,7 +70,9 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val actorSyste
 
   // Executors we have requested the cluster manager to kill that have not died yet
   private val executorsPendingToRemove = new HashSet[String]
-
+  // DriverActor 收到 ReviveOffers 消息后，会调用
+  // launchTasks(scheduler.resourceOffers(Seq(new WorkerOffer(executorId,executorHost(executorId),
+  // freeCores(executorId)))))来 launch tasks。
   class DriverActor(sparkProperties: Seq[(String, String)]) extends Actor with ActorLogReceive {
     override protected def log = CoarseGrainedSchedulerBackend.this.log
     private val addressToExecutorId = new HashMap[Address, String]
@@ -126,7 +128,6 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val actorSyste
                 "from unknown executor $sender with ID $executorId")
           }
         }
-
       case ReviveOffers =>
         makeOffers()
 
@@ -164,6 +165,8 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val actorSyste
 
     // Make fake resource offers on all executors
     def makeOffers() {
+      // launch tasks。scheduler 就是TaskSchedulerImpl。
+      // scheduler.resourceOffers() 从 FIFO 或者 Fair 调度器那里获得排序后的 TaskSetManager
       launchTasks(scheduler.resourceOffers(executorDataMap.map { case (id, executorData) =>
         new WorkerOffer(id, executorData.executorHost, executorData.freeCores)
       }.toSeq))
@@ -177,6 +180,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val actorSyste
     }
 
     // Launch tasks returned by a set of resource offers
+    // DriverActor 中的 launchTasks() 将每个 task 序列化
     def launchTasks(tasks: Seq[Seq[TaskDescription]]) {
       for (task <- tasks.flatten) {
         val ser = SparkEnv.get.closureSerializer.newInstance()
@@ -196,7 +200,7 @@ class CoarseGrainedSchedulerBackend(scheduler: TaskSchedulerImpl, val actorSyste
             }
           }
         }
-        else {
+        else {// 如果序列化大小不超过 Akka 的 akkaFrameSize-AkkaUtils.reservedSizeBytes，那么直接将 task送到 executor 那里执行
           val executorData = executorDataMap(task.executorId)
           executorData.freeCores -= scheduler.CPUS_PER_TASK
           executorData.executorActor ! LaunchTask(new SerializableBuffer(serializedTask))

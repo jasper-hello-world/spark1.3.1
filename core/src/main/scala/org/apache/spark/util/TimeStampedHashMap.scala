@@ -36,6 +36,8 @@ private[spark] case class TimeStampedValue[V](value: V, timestamp: Long)
  *
  * @param updateTimeStampOnGet Whether timestamp of a pair will be updated when it is accessed
  */
+//  这是scala.collection.mutable.Map的自定义实现，它将插入时间戳与每个键值对一起存储。 如果指定，每对访问的时间戳可以更新。
+//  时间戳早于特定阈值时间的键值对可以使用clearOldValues方法来删除。 这是为了替换scala.collection.mutable.HashMap。
 private[spark] class TimeStampedHashMap[A, B](updateTimeStampOnGet: Boolean = false)
   extends mutable.Map[A, B]() with Logging {
 

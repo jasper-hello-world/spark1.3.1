@@ -223,6 +223,8 @@ private[spark] abstract class MapOutputTracker(conf: SparkConf) extends Logging 
  * MapOutputTracker for the driver. This uses TimeStampedHashMap to keep track of map
  * output information, which allows old output information based on a TTL.
  */
+// MapOutputTracker的driver。这使用TimeStampedHashMap来跟踪map output的输出信息，它允许基于TTL的old output输出信息
+// TTL--time to live生存时间
 private[spark] class MapOutputTrackerMaster(conf: SparkConf)
   extends MapOutputTracker(conf) {
 
@@ -234,13 +236,15 @@ private[spark] class MapOutputTrackerMaster(conf: SparkConf)
    * so that statuses are dropped only by explicit de-registering or by TTL-based cleaning (if set).
    * Other than these two scenarios, nothing should be dropped from this HashMap.
    */
+  // 基于时间戳的HashMap，用于在驱动程序中存储mapStatus和缓存的序列化状态，因此只有通过显式取消注册或基于TTL的清理（如果设置）
+  // 才会丢弃状态。除了这两种情况外，不应该从此HashMap中删除任何内容。
   protected val mapStatuses = new TimeStampedHashMap[Int, Array[MapStatus]]()
   private val cachedSerializedStatuses = new TimeStampedHashMap[Int, Array[Byte]]()
 
   // For cleaning up TimeStampedHashMaps
   private val metadataCleaner =
     new MetadataCleaner(MetadataCleanerType.MAP_OUTPUT_TRACKER, this.cleanup, conf)
-
+  // 通过registerShuffle()方法将注册一个已形成的ShuffleMapStage的最后一个RDD
   def registerShuffle(shuffleId: Int, numMaps: Int) {
     if (mapStatuses.put(shuffleId, new Array[MapStatus](numMaps)).isDefined) {
       throw new IllegalArgumentException("Shuffle ID " + shuffleId + " registered twice")

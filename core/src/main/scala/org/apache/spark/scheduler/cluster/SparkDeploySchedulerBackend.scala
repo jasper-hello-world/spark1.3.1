@@ -41,7 +41,7 @@ private[spark] class SparkDeploySchedulerBackend(
 
   val maxCores = conf.getOption("spark.cores.max").map(_.toInt)
   val totalExpectedCores = maxCores.getOrElse(0)
-
+  // SparkDeploySchedulerBackend 在 start() 的时候，会启动 DriverActor。
   override def start() {
     super.start()
 

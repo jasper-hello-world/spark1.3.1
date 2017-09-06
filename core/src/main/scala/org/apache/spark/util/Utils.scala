@@ -1177,6 +1177,8 @@ private[spark] object Utils extends Logging {
    *
    * @param skipClass Function that is used to exclude non-user-code classes.
    */
+  // 当在spark包中调用类时，返回调用spark的用户代码类的名称(在spark包外)，以及它们调用的spark方法。
+  // 例如，这是用来告诉用户在他们的代码中每个RDD被创建的地方。
   def getCallSite(skipClass: String => Boolean = coreExclusionFunction): CallSite = {
     // Keep crawling up the stack trace until we find the first function not inside of the spark
     // package. We track the last (shallowest) contiguous Spark method. This might be an RDD
@@ -1187,7 +1189,7 @@ private[spark] object Utils extends Logging {
     var firstUserLine = 0
     var insideSpark = true
     var callStack = new ArrayBuffer[String]() :+ "<unknown>"
-
+    // 这个方法是取当前线程的堆栈信息，遍历堆栈，将方法名符合一定规则的放入栈顶
     Thread.currentThread.getStackTrace().foreach { ste: StackTraceElement =>
       // When running under some profilers, the current stack trace might contain some bogus
       // frames. This is intended to ensure that we don't crash in these situations by

@@ -109,6 +109,8 @@ class DAGScheduler(
    *
    * All accesses to this map should be guarded by synchronizing on it (see SPARK-4454).
    */
+//  包含缓存每个RDD分区的位置。 该map的键是RDD ids，其值是由分区号索引的数组。 每个数组值都是RDD分区被缓存的位置集合。
+//  对此map的所有访问都应通过同步进行保护（参见SPARK-4454）。
   private val cacheLocs = new HashMap[Int, Array[Seq[TaskLocation]]]
 
   // For tracking failed nodes, we use the MapOutputTracker's epoch number, which is sent with
@@ -246,10 +248,13 @@ class DAGScheduler(
       callSite: CallSite)
     : Stage =
   {
+    // 调用 finalRDD 的 getParentStages()。
     val parentStages = getParentStages(rdd, jobId)
     val id = nextStageId.getAndIncrement()
     val stage = new Stage(id, rdd, numTasks, shuffleDep, parentStages, jobId, callSite)
+    // 缓存创建的stage
     stageIdToStage(id) = stage
+    // 在需要给定stage和所有这些stage的祖先的jobs中注册给定的jobId
     updateJobIdStageIdMaps(jobId, stage)
     stage
   }
@@ -260,6 +265,9 @@ class DAGScheduler(
    * present in the MapOutputTracker, then the number and location of available outputs are
    * recovered from the MapOutputTracker
    */
+
+// 为给定的RDD创建一个shuffle map stage。该stage也将和所提供的jobId联系在一起。如果之前存在shuffleId的stage，
+// 那么shuffleId会出现在MapOutputTracker中，然后可以从MapOutputTracker中恢复可用于MapShuffleTask输出的数量和位置
   private def newOrUsedStage(
       rdd: RDD[_],
       numTasks: Int,
@@ -269,6 +277,9 @@ class DAGScheduler(
     : Stage =
   {
     val stage = newStage(rdd, numTasks, Some(shuffleDep), jobId, callSite)
+    //  一个 ShuffleMapStage形成后，会将该 stage 最后一个 RDD 注册
+    //  到 MapOutputTrackerMaster.registerShuffle(shuffleDep.shuffleId, rdd.partitions.size) ，这一步很重要，
+    //  因为 shuffle 过程需要 MapOutputTrackerMaster 来指示 ShuffleMapTask 输出数据的位置。
     if (mapOutputTracker.containsShuffle(shuffleDep.shuffleId)) {
       val serLocs = mapOutputTracker.getSerializedMapOutputStatuses(shuffleDep.shuffleId)
       val locs = MapOutputTracker.deserializeMapStatuses(serLocs)
@@ -294,7 +305,8 @@ class DAGScheduler(
     val visited = new HashSet[RDD[_]]
     // We are manually maintaining a stack here to prevent StackOverflowError
     // caused by recursively visiting
-    val waitingForVisit = new Stack[RDD[_]]
+    val waitingForVisit = new Stack[RDD[_]]  // 栈先进后出 finalRDD 最先执行
+    // getParentStages() 从 finalRDD 出发，反向 visit 逻辑执行图。
     def visit(r: RDD[_]) {
       if (!visited(r)) {
         visited += r
@@ -302,8 +314,10 @@ class DAGScheduler(
         // we can't do it in its constructor because # of partitions is unknown
         for (dep <- r.dependencies) {
           dep match {
+            // 遇到 ShuffleDependency 切开 stage，并递归到 ShuffleDepedency 依赖的 stage
             case shufDep: ShuffleDependency[_, _, _] =>
               parents += getShuffleMapStage(shufDep, jobId)
+            // 遇到 NarrowDependency 就将依赖的 RDD 加入到stage
             case _ =>
               waitingForVisit.push(dep.rdd)
           }
@@ -746,7 +760,9 @@ class DAGScheduler(
         return
     }
     if (finalStage != null) {
+      // 跟踪在DAGScheduler中job的信息
       val job = new ActiveJob(jobId, finalStage, func, partitions, callSite, listener, properties)
+      // 清空包含了缓存每个RDD分区的位置,线程同步的
       clearCacheLocs()
       logInfo("Got job %s (%s) with %d output partitions (allowLocal=%s)".format(
         job.jobId, callSite.shortForm, partitions.length, allowLocal))
@@ -781,15 +797,23 @@ class DAGScheduler(
     if (jobId.isDefined) {
       logDebug("submitStage(" + stage + ")")
       if (!waitingStages(stage) && !runningStages(stage) && !failedStages(stage)) {
+        // 1.先确定该 stage 的 missingParentStages，使用 getMissingParentStages(stage) 。
+        // 如果 parentStages 都可能已经执行过了，那么就为空了。
         val missing = getMissingParentStages(stage).sortBy(_.id)
         logDebug("missing: " + missing)
+        // 3.如果 missingParentStages 为空，说明该 stage 可以立即执行
         if (missing == Nil) {
           logInfo("Submitting " + stage + " (" + stage.rdd + "), which has no missing parents")
+          // 调用 submitMissingTasks(stage, jobId) 来生成和提交具体的 task。
           submitMissingTasks(stage, jobId.get)
-        } else {
+        }
+        // 2.如果 missingParentStages 不为空，那么先递归提交 missing 的 parent stages
+        else {
           for (parent <- missing) {
             submitStage(parent)
           }
+          // HashSet的stage集合
+          // 将自己加入到 waitingStages 里面，等到 parent stages 执行结束后，会触发提交 waitingStages 里面的 stage。
           waitingStages += stage
         }
       }
@@ -808,7 +832,8 @@ class DAGScheduler(
     val partitionsToCompute: Seq[Int] = {
       if (stage.isShuffleMap) {
         (0 until stage.numPartitions).filter(id => stage.outputLocs(id) == Nil)
-      } else {
+      }
+      else {
         val job = stage.resultOfJob.get
         (0 until job.numPartitions).filter(id => !job.finished(id))
       }
@@ -858,14 +883,14 @@ class DAGScheduler(
         runningStages -= stage
         return
     }
-
+    // 如果 stage 是 ShuffleMapStage，那么 new 出来与该 stage 最后一个 RDD 的 partition 数相同的ShuffleMapTasks
     val tasks: Seq[Task[_]] = if (stage.isShuffleMap) {
       partitionsToCompute.map { id =>
         val locs = getPreferredLocs(stage.rdd, id)
         val part = stage.rdd.partitions(id)
         new ShuffleMapTask(stage.id, taskBinary, part, locs)
       }
-    } else {
+    } else { // 如果 stage 是 ResultStage，那么 new 出来与 stage 最后一个 RDD 的 partition 个数相同的ResultTasks。
       val job = stage.resultOfJob.get
       partitionsToCompute.map { id =>
         val p: Int = job.partitions(id)
@@ -879,6 +904,7 @@ class DAGScheduler(
       logInfo("Submitting " + tasks.size + " missing tasks from " + stage + " (" + stage.rdd + ")")
       stage.pendingTasks ++= tasks
       logDebug("New pending tasks: " + stage.pendingTasks)
+      // 一个 stage 里面的 task 组成一个 TaskSet，最后调用 taskScheduler.submitTasks(taskSet) 来提交一整个taskSet。
       taskScheduler.submitTasks(
         new TaskSet(tasks.toArray, stage.id, stage.newAttemptId(), stage.jobId, properties))
       stage.latestInfo.submissionTime = Some(clock.getTimeMillis())
