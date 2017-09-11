@@ -59,6 +59,19 @@ import org.apache.spark.storage.BlockManagerMessages.BlockManagerHeartbeat
  *  - When adding a new data structure, update `DAGSchedulerSuite.assertDataStructuresEmpty` to
  *    include the new structure. This will help to catch memory leaks.
  */
+
+// 实现面向stage调度的高层次调度层。它计算每个job的stage的DAG，跟踪哪些RDD和stage输出被物化(写入了磁盘或者内存)，
+// 并且寻找一个最少消耗调度机制来运行job。该组件将stage封装成tasksets（包含多个task的集合）提交给TaskSchedulerImpl上，
+// 最终会将task扔给集群的executor来运行
+
+// 除了提出DAG的stage，此类还根据当前的缓存状态确定运行每个任务的最佳位置，并将其传递到底层的TaskSchedulerImpl类。
+// 此外，它会处理由于shuffle输出文件丢失而导致的故障，在这种情况下可能需要重新提交old stage。
+// 在一个stage中的故障不是因为shuffle文件丢失引起的由TaskScheduler处理，TaskScheduler将在取消整个阶段之前会重试每个任务少量次数。
+// eg:也就是说如果跟shuffle文件丢失没关系就由TaskScheduler处理，多次重试每个task。stage内部的失败，例如OOM问题，TaskScheduler多次重试
+// task（resubmit多次），就应该在这里找原因。直到最后无法重新跑，会取消整个job。
+
+// 这里有一个检查表，用于在对这个类进行修改或查看更改时使用：
+// - 添加新数据结构时，请更新DAGSchedulerSuite.assertDataStructuresEmpty以包含新结构。这将有助于捕获内存泄漏。
 private[spark]
 class DAGScheduler(
     private[scheduler] val sc: SparkContext,

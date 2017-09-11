@@ -309,13 +309,15 @@ private[spark] class Worker(
         case e: Throwable =>
           logError("App dir cleanup failed: " + e.getMessage, e)
       }
-
+    // 接收来自 Master的MasterChanged 消息
     case MasterChanged(masterUrl, masterWebUiUrl) =>
       logInfo("Master has changed, new master is at " + masterUrl)
+      // 改变Master
       changeMaster(masterUrl, masterWebUiUrl)
-
+      // 更新executor的信息
       val execs = executors.values.
         map(e => new ExecutorDescription(e.appId, e.execId, e.cores, e.state))
+      // 发送WorkerSchedulerStateResponse 消息给master
       sender ! WorkerSchedulerStateResponse(workerId, execs.toList, drivers.keys.toSeq)
 
     case Heartbeat =>

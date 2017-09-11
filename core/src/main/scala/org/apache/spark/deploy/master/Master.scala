@@ -48,7 +48,7 @@ import org.apache.spark.metrics.MetricsSystem
 import org.apache.spark.scheduler.{EventLoggingListener, ReplayListenerBus}
 import org.apache.spark.ui.SparkUI
 import org.apache.spark.util.{ActorLogReceive, AkkaUtils, SignalLogger, Utils}
-
+// 1.6版本就开始使用RPC来进行通信
 private[spark] class Master(
     host: String,
     port: Int,
@@ -200,10 +200,11 @@ private[spark] class Master(
   override def revokedLeadership() {
     self ! RevokedLeadership
   }
-
+  // 接收相应Actor发送过来的消息 如 Driver,worker的actor
   override def receiveWithLogging = {
     case ElectedLeader => {
       val (storedApps, storedDrivers, storedWorkers) = persistenceEngine.readPersistedData()
+      // 判断storedApps，storeDrivers,storedWorkers是否为空
       state = if (storedApps.isEmpty && storedDrivers.isEmpty && storedWorkers.isEmpty) {
         RecoveryState.ALIVE
       } else {
@@ -212,6 +213,7 @@ private[spark] class Master(
       logInfo("I have been elected leader! New state: " + state)
       if (state == RecoveryState.RECOVERING) {
         beginRecovery(storedApps, storedDrivers, storedWorkers)
+        // 给master自己发送一个CompleteRecovery的消息
         recoveryCompletionTask = context.system.scheduler.scheduleOnce(WORKER_TIMEOUT millis, self,
           CompleteRecovery)
       }
@@ -395,7 +397,7 @@ private[spark] class Master(
           }
       }
     }
-
+    // 接收来自AppClient app知晓Master已改变的消息
     case MasterChangeAcknowledged(appId) => {
       idToApp.get(appId) match {
         case Some(app) =>
@@ -407,11 +409,12 @@ private[spark] class Master(
 
       if (canCompleteRecovery) { completeRecovery() }
     }
-
+    // 接收来自 worker 的响应消息，无响应的worker.state会仍为UNKONWN
     case WorkerSchedulerStateResponse(workerId, executors, driverIds) => {
       idToWorker.get(workerId) match {
         case Some(worker) =>
           logInfo("Worker has been re-registered: " + workerId)
+          // 响应会更新worker.state的状态
           worker.state = WorkerState.ALIVE
 
           val validExecutors = executors.filter(exec => idToApp.get(exec.appId).isDefined)
@@ -463,13 +466,15 @@ private[spark] class Master(
   def canCompleteRecovery =
     workers.count(_.state == WorkerState.UNKNOWN) == 0 &&
       apps.count(_.state == ApplicationState.UNKNOWN) == 0
-
+  // 状态的恢复在beginRecovery & completeRecovery方法中：beginRecovery 方法首先重新注册APP到内存中
   def beginRecovery(storedApps: Seq[ApplicationInfo], storedDrivers: Seq[DriverInfo],
       storedWorkers: Seq[WorkerInfo]) {
     for (app <- storedApps) {
       logInfo("Trying to recover app: " + app.id)
       try {
+        // 重新注册APP到内存中
         registerApplication(app)
+        // 将app的状态改为UNKONWN
         app.state = ApplicationState.UNKNOWN
         app.driver ! MasterChanged(masterUrl, masterWebUiUrl)
       } catch {
@@ -480,6 +485,7 @@ private[spark] class Master(
     for (driver <- storedDrivers) {
       // Here we just read in the list of drivers. Any drivers associated with now-lost workers
       // will be re-launched when we detect that the worker is missing.
+      // 把当前丢失的workers相关联的driver加入到drivers中的hashSet列表中
       drivers += driver
     }
 
@@ -503,6 +509,7 @@ private[spark] class Master(
     }
 
     // Kill off any workers and apps that didn't respond to us.
+    // 过滤掉没有响应master的workers和apps
     workers.filter(_.state == WorkerState.UNKNOWN).foreach(removeWorker)
     apps.filter(_.state == ApplicationState.UNKNOWN).foreach(finishApplication)
 

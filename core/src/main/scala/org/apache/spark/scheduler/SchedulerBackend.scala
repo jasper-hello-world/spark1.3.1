@@ -24,6 +24,9 @@ package org.apache.spark.scheduler
  */
 // 用于调度系统的后端接口，允许在TaskSchedulerImpl中插入不同的系统。我们假设一个类似mesos的模型，当机器可用时，应用程序可以获得资源，并可以在它们上启动任务。
 // CoarseGrainedSchedulerBackend 中混入了SchedulerBackend
+
+// SchedulerBackend做为TaskScheduler的底层组件使用，TaskScheduler与master的交互都通过该组件完成。SchedulerBackend构造一个appdesc
+// 传给APPClient，AppClient会将APPdesc信息发送到所有的master，底层通信通过akka拿到master的引用，向master注册。
 private[spark] trait SchedulerBackend {
   private val appId = "spark-application-" + System.currentTimeMillis
 

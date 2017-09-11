@@ -65,14 +65,15 @@ private[spark] class TaskSchedulerImpl(
     isLocal: Boolean = false)
   extends TaskScheduler with Logging
 {
+  // 默认 的任务失败重试次数为4次
   def this(sc: SparkContext) = this(sc, sc.conf.getInt("spark.task.maxFailures", 4))
 
   val conf = sc.conf
 
-  // How often to check for speculative tasks
+  // How often to check for speculative tasks  100ms
   val SPECULATION_INTERVAL = conf.getLong("spark.speculation.interval", 100)
 
-  // Threshold above which we warn user initial TaskSet may be starved
+  // Threshold above which we warn user initial TaskSet may be starved 15s
   val STARVATION_TIMEOUT = conf.getLong("spark.starvation.timeout", 15000)
 
   // CPUs to request per task
@@ -127,7 +128,7 @@ private[spark] class TaskSchedulerImpl(
   override def setDAGScheduler(dagScheduler: DAGScheduler) {
     this.dagScheduler = dagScheduler
   }
-
+  // 创建一个调度池。该调度池具有优先策略，如fifo，fair等
   def initialize(backend: SchedulerBackend) {
     this.backend = backend
     // temporarily set rootPool name to empty

@@ -39,6 +39,8 @@ import org.apache.spark.util.{ActorLogReceive, Utils, AkkaUtils}
  *
  * @param masterUrls Each url should look like spark://host:port.
  */
+// APPclient是一个APP连接cluster的接口，需要一个master的URL，一个APP的description和一个event的listener，
+// 当各种event出现的时候，会回调listener。
 private[spark] class AppClient(
     actorSystem: ActorSystem,
     masterUrls: Array[String],
@@ -59,11 +61,12 @@ private[spark] class AppClient(
   var activeMasterUrl: String = null
 
   class ClientActor extends Actor with ActorLogReceive with Logging {
+    // ActorSelection是一个ActorSystem的Actors树的一部分的逻辑视图，允许向该部分发送消息。
     var master: ActorSelection = null
     var alreadyDisconnected = false  // To avoid calling listener.disconnected() multiple times
     var alreadyDead = false  // To avoid calling listener.dead() multiple times
     var registrationRetryTimer: Option[Cancellable] = None
-
+    // akka 中preStart函数在构造方法之后会被调用。用于初始化一些资源
     override def preStart() {
       context.system.eventStream.subscribe(self, classOf[RemotingLifecycleEvent])
       try {
@@ -80,6 +83,7 @@ private[spark] class AppClient(
       for (masterAkkaUrl <- masterAkkaUrls) {
         logInfo("Connecting to master " + masterAkkaUrl + "...")
         val actor = context.actorSelection(masterAkkaUrl)
+        // RegisterApplication里面封装了Appliction的信息
         actor ! RegisterApplication(appDescription)
       }
     }
@@ -141,7 +145,7 @@ private[spark] class AppClient(
         if (ExecutorState.isFinished(state)) {
           listener.executorRemoved(fullId, message.getOrElse(""), exitStatus)
         }
-
+      // 接收 来自Master的MasterChanged 消息
       case MasterChanged(masterUrl, masterWebUiUrl) =>
         logInfo("Master has changed, new master is at " + masterUrl)
         changeMaster(masterUrl)
@@ -177,7 +181,7 @@ private[spark] class AppClient(
         alreadyDead = true
       }
     }
-
+    // 在该方法中清除掉在preStart()方法中初始化的资源
     override def postStop() {
       registrationRetryTimer.foreach(_.cancel())
     }

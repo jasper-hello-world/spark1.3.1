@@ -365,6 +365,7 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
     Props(new HeartbeatReceiver(taskScheduler)), "HeartbeatReceiver")
   @volatile private[spark] var dagScheduler: DAGScheduler = _
   try {
+    // 创建DAGScheduler
     dagScheduler = new DAGScheduler(this)
   } catch {
     case e: Exception => {
@@ -378,6 +379,7 @@ class SparkContext(config: SparkConf) extends Logging with ExecutorAllocationCli
 
   // start TaskScheduler after taskScheduler sets DAGScheduler reference in DAGScheduler's
   // constructor
+  // sparkContext在创建好TaskScheduler后会调用scheduler的start()方法
   taskScheduler.start()
 
   val applicationId: String = taskScheduler.applicationId()
@@ -2141,6 +2143,7 @@ object SparkContext extends Logging {
       case SPARK_REGEX(sparkUrl) =>
         val scheduler = new TaskSchedulerImpl(sc)
         val masterUrls = sparkUrl.split(",").map("spark://" + _)
+        // backend 的初始化
         val backend = new SparkDeploySchedulerBackend(scheduler, sc, masterUrls)
         scheduler.initialize(backend)
         (backend, scheduler)
