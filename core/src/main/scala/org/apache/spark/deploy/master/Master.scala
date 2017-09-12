@@ -406,7 +406,7 @@ private[spark] class Master(
         case None =>
           logWarning("Master change ack from unknown app: " + appId)
       }
-
+      // 当application和worker中没有状态为UNKNOWN的app和worker时canCompleteRecovery为true
       if (canCompleteRecovery) { completeRecovery() }
     }
     // 接收来自 worker 的响应消息，无响应的worker.state会仍为UNKONWN
@@ -555,7 +555,7 @@ private[spark] class Master(
     val numWorkersAlive = shuffledAliveWorkers.size
     var curPos = 0
     // 首先，调度driver,为什么要调度？什么情况下会注册driver？并导致driver会被调度
-    // 其实只有用yarn-cluster模式提交的时候，才会注册driver；因为standalone和yarn-client模式，都会在本地直接
+    // 其实只有用yarn-cluster模式提交的时候，才会注册driver；因为standalone client和yarn-client模式，都会在本地直接
     // 启动driver，而不会来注册driver，就更不可能让master调度driver了
     // driver的调度机制
     // 遍历waitingDrivers的ArrayBuffer
@@ -569,7 +569,7 @@ private[spark] class Master(
       while (numWorkersVisited < numWorkersAlive && !launched) {
         val worker = shuffledAliveWorkers(curPos)
         numWorkersVisited += 1
-        // 如果当前的这个worker的空闲内存量大于等于，driver需要的内存
+        // 如果当前的这个worker的空闲内存量大于等于driver需要的内存
         // 并且worker的空闲cpu数量，大于等于driver需要的cpu数量
         if (worker.memoryFree >= driver.desc.mem && worker.coresFree >= driver.desc.cores) {
           // 启动driver
@@ -701,12 +701,14 @@ private[spark] class Master(
     addressToWorker(workerAddress) = worker
     true
   }
-
+  // 首先移除executor，再移除driver，再移除worker。
   def removeWorker(worker: WorkerInfo) {
     logInfo("Removing worker " + worker.id + " on " + worker.host + ":" + worker.port)
     worker.setState(WorkerState.DEAD)
+    // 从内存结构中移除该worker，idToWorker是一个记录worker的hashmap
     idToWorker -= worker.id
     addressToWorker -= worker.actor.path.address
+    // 遍历属于该worker的所有executor，向使用每个executor的driver发送消息，告知该executor挂了，并移除该executor
     for (exec <- worker.executors.values) {
       logInfo("Telling app of lost executor: " + exec.id)
       exec.application.driver ! ExecutorUpdated(
@@ -714,6 +716,7 @@ private[spark] class Master(
       exec.application.removeExecutor(exec)
     }
     for (driver <- worker.drivers.values) {
+      // 对于driver，如果设置了对driver的监控，那么重启该driver，否则直接移除该driver
       if (driver.desc.supervise) {
         logInfo(s"Re-launching ${driver.id}")
         relaunchDriver(driver)
@@ -724,7 +727,8 @@ private[spark] class Master(
     }
     persistenceEngine.removeWorker(worker)
   }
-
+  // 重新启动driver代码：改变driver的状态，重新加入到内存中，加入后，master会重新启动该driver。
+  // 其中waitingDrivers是一个ArrayBuffer：waitingDrivers = new ArrayBuffer[DriverInfo]
   def relaunchDriver(driver: DriverInfo) {
     driver.worker = None
     driver.state = DriverState.RELAUNCHING
